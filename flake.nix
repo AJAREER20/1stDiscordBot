@@ -8,7 +8,14 @@
       pkgs = nixpkgs.legacyPackages.${system};
     in {
       devShell = pkgs.mkShell {
-        nativeBuildInputs = with pkgs; [ python39Packages.discordpy ];
+        nativeBuildInputs = with pkgs; [ 
+          python310
+          python310Packages.beautifulsoup4
+          python310Packages.python-dotenv
+          python310Packages.pillow
+          python310Packages.discordpy 
+          python310Packages.pytesseract
+        ];
         buildInputs = [ ];
       };
     });

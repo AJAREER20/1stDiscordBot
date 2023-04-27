@@ -1,29 +1,51 @@
 import os
 import discord
 import re
-import random
 import json
-import datetime
+import pytesseract
 # import math
 from bs4 import BeautifulSoup
 from discord.ext import commands
 from dotenv import load_dotenv
 from urllib.request import urlopen
+import urllib
+import io
+from PIL import Image
 
 load_dotenv()
 TOKEN = os.getenv('DISCORD_TOKEN')
-GUILD = os.getenv('DISCORD_GUILD')
-# intents = discord.Intents()
-# intents.members = True
-client = discord.Client()
+# intents = discord.Intents(messages=True, guilds=True)
 
-def get_prefix(client, message):
-    with open('prefixes.json', 'r') as f:
-        prefixes = json.load(f)
-    return prefixes[str(message.guild.id)]
+# GUILD = os.getenv('DISCORD_GUILD')
+# client = discord.Client(intents = discord.Intents.all())
+# client = discord.Client()
 
-bot = commands.Bot(command_prefix = get_prefix)
+async def get_prefix(bot, message):
+    if message.guild:
+        try:
+            with open('prefixes.json', 'r') as f:
+                prefixes = json.load(f)
+            prefix =  prefixes[str(message.guild.id)]
+        except:
+            prefix = "-"
+    else:
+        prefix = "-"
+
+    return prefix
+
+
+intents = discord.Intents.default()
+intents.typing = False
+intents.presences = False
+intents.messages = True
+intents.guilds = True
+bot = commands.Bot(command_prefix=get_prefix, intents=intents, case_insensitive = True)
 bot.remove_command('help')
+
+@bot.event
+async def on_ready():
+    print(f'bot {bot.user} is ready')
+
 
 @bot.event
 async def on_guild_join(guild):
@@ -42,32 +64,35 @@ async def on_guild_remove(guild):
         json.dump(prefixes, f, indent = 4)
 
 @bot.command()
+@commands.has_permissions(administrator=True)
 async def setprefix(ctx,prefix):
+    if ctx.guild is None:
+        await ctx.send("This command can only be used in a guild.")
+        return
     with open('prefixes.json', 'r') as f:
         prefixes = json.load(f)
     prefixes[str(ctx.guild.id)] = prefix
     with open('prefixes.json', 'w') as f:
         json.dump(prefixes, f, indent = 4)
+@setprefix.error
+async def setprefix_error(ctx, error):
+    if isinstance(error, commands.MissingPermissions):
+        await ctx.send("You need to be an admin to use this command!")
 @bot.event
-async def on_ready():
-    await bot.change_presence(status=discord.Status.invisible)
-    print('bot is ready')
-# @bot.event
-# async def on_member_join(member):
-#     with open("welcome.json", "r") as w:
-#         welcome = json.load(w)
-#     if "801878392198135818" in welcome.keys():
-#         print(int(welcome["801878392198135818"]))
-#         pfp = member.avatar_url
-#         s = discord.Embed(description=f"hello {member.mention}"
-#                                       f"welcome to the server!")
-#         s.set_image(url=(pfp))
-#         channel = client.get_channel(int(welcome["801878392198135818"]))
-#         await channel.send(embed = s)
-#     else:
-#         print(":/")
-#         return
-@bot.command(pass_context=True)
+async def on_member_join(member):
+    channel_name = 'general'
+    channel = discord.utils.get(member.guild.channels, name=channel_name)
+    
+    if channel is None:
+        print(f"Channel '{channel_name}' not found.")
+        return
+
+    embed = discord.Embed(description=f"Welcome {member.mention} to {member.guild.name}!", color=discord.Color.blue())
+    embed.set_image(url=member.avatar_url)
+
+    await channel.send(embed=embed)
+@bot.command()
+@commands.has_permissions(administrator=True)
 async def setwelcomechannel(ctx,arg):
     if discord.Permissions.administrator :
         with open("welcome.json","r") as r:
@@ -82,193 +107,13 @@ async def setwelcomechannel(ctx,arg):
 async def ping(ctx):
     await ctx.send('Pong! {0}'.format(round(bot.latency, 1)))
 
-# @bot.command()
-# @commands.is_owner()
-# async def giveaway(ctx):
-#
-#     file = open("giveaway.txt", "r", encoding='utf-8')
-#     galist = []
-#     count = 1
-#     for line in file:
-#         if "|||" in line.strip():
-#
-#             temp = ""
-#             for i in galist:
-#                 temp += i + "\n"
-#             embed = discord.Embed(title=count, description=temp, color=0xFF5733)
-#             await ctx.send( embed = embed )
-#             count += 1
-#             galist = []
-#
-#         else:
-#
-#             galist.append(line.strip())
-
-
-@bot.command()
-async def kanji(ctx):
-
-    def kanji_list():
-        in_file = open('kanji.txt', "r", encoding="utf-8")
-        kanjilist = []
-
-        for line in in_file:
-            kanjilist.append(line.strip())
-
-        return kanjilist
-
-    def dump_kanji(kanji):
-
-        with open("kanji.json", "r", encoding="utf-8") as f:
-            kanji_u = json.load(f)
-        if str(ctx.message.author.id) in kanji_u:
-            kanji_l = kanji_u["kanji"].append(kanji)
-            kanji_u[str(ctx.message.author.id)] = {'kanji' : kanji_l, 'time' : datetime.datetime.now().strftime("%X")}
-        else:
-            kanji_l = []
-            # kanji_u[str(ctx.message.author.id)] = {}
-            kanji_l.append(kanji)
-            kanji_u[str(ctx.message.author.id)] = {'kanji': kanji_l, 'time': datetime.datetime.now().strftime("%X")}
-        with open('kanji.json', 'w', encoding='utf8') as f:
-            json.dump(kanji_u, f, indent=4, ensure_ascii=False)
-
-    def v_kanji(kanji):
-
-        with open("kanji.json", "r", encoding="utf-8") as f:
-            kanji_u2 = json.load(f)
-        time =datetime.datetime.now() - kanji_u2[str(ctx.message.author.id)]["time"].datetime.strptime(datetime_str, '%H:%M:%S')
-
-        if (time.seconds/3600) >= 24 and kanji not in kanji_u2[str(ctx.message.author.id)]['kanji']:
-            return True
-
-        return False
-
-    kanjilist=kanji_list()
-    randk = random.choice(kanjilist)
-    with open("kanji.json", "r", encoding="utf-8") as f:
-        kanji_u3 = json.load(f)
-    if str(ctx.message.author.id) in kanji_u3.keys():
-        valid = v_kanji(randk)
-
-        if valid is True:
-            dump_kanji(randk)
-            await ctx.send(randk)
-    else:
-        dump_kanji(randk)
-        await ctx.send(randk)
 @bot.command()
 async def invite(ctx):
-
-    await ctx.send(embed="https://discord.com/api/oauth2/authorize?client_id=717009258532831262&permissions=8&scope=bot")
-
-@bot.command()
-async def randch(ctx, *, args):
-
-    msg = args
-    list1 = msg.split(" ")
-    list2 = []
-
-    for i in list1:
-
-        if i != '':
-
-            list2.append(i)
-
-    rand = random.choice(list2)
-    await ctx.send(rand)
-
-@bot.command()
-async def rank(ctx, *,args):
-    def rank(ranklist, count):
-        dict1 = {}
-
-        if ranklist == []:
-
-            return {'26uy2d11iuefs08ts3': '1'}
-
-        else:
-
-            rand2 = random.choice(ranklist)
-            dict1[rand2] = dict1.get(rand2, count)
-
-            if ranklist == []:
-
-                return {'26uy2d11iuefs08ts3': '1'}
-
-            else:
-
-                ranklist.pop(ranklist.index(rand2))
-
-                dict2 = rank(ranklist, count + 1)
-
-                for i in dict2:
-                    dict1[i] = dict1.get(i, dict2[i])
-
-                return dict1
-    msg = args
-    list1 = msg.split(" ")
-    list2 = []
-    for i in list1:
-
-        if i != '':
-
-            list2.append(i)
-
-    ranked = rank(list2,1)
-    del ranked['26uy2d11iuefs08ts3']
-    # for i in ranked:
-    #
-    #     rn = str(ranked[i]) + " " + ":" + " " + str(i) + "\n"
-    #     await ctx.channel.send(rn)
-    lists = ""
-    for i in ranked:
-        lists += str(ranked[i]) + ":" + " " + str(i) + "\n"
-    embed = discord.Embed(title="top", description=lists, color=0xFF5733)
-    await ctx.send(embed=embed)
-
-
-@bot.command()
-async def randnums(ctx, arg1, arg2):
-    # def mkstr(list1):
-    #     str1 = ""
-    #     for i in list1:
-    #         str1 += i
-    #     return str1
-    list10= []
-    int1 = int(arg2)
-    for x in range(int1):
-
-        # reg2 = int(str(arg1))
-        reg2 = int(arg1)
-        while True:
-
-            ran = random.randint(0, reg2)
-
-            if str(ran) not in list10:
-
-                list10.append(str(ran))
-                break
-    nums = ""
-    for i in list10:
-        nums += i + '\n'
-    await ctx.send(embed=discord.Embed(description=nums))
+    await ctx.send(embed=discord.Embed(description="https://discord.com/api/oauth2/authorize?client_id=1068941693623222353&permissions=8&scope=bot"))
 # @bot.command()
-# async def math(ctx, arg):
-#
-#     try:
-#         math = ("math." + arg)
-#         await ctx.send(exec(math))
-#     except:
-#         return
-
-# @bot.command()
+# @commands.is_owner()
 # async def exec(ctx, arg):
-#
-#     if str(ctx.message.author.id) == '483317936862527499':
-#         await ctx.send(str(exec(str(arg))))
-#     else:
-#         print(str(ctx.message.author.id))
-#         print("no")
+#   await ctx.send(str(exec(str(arg))))
 @bot.command()
 async def malset(ctx, arg):
     try:
@@ -338,11 +183,6 @@ async def malremove(ctx, arg):
         ctx.send(embed=discord.Embed(description="the user mal has been removed"))
     except:
         await ctx.send(embed=discord.Embed(description="please specify a valid user to remove"))
-@bot.command()
-@commands.is_owner()
-async def restart(ctx):
-    await bot.logout()
-    await bot.login(TOKEN, bot=True)
 @bot.command(pass_context = True)
 @commands.has_permissions(administrator=True)
 async def clr(ctx,arg=None):
@@ -358,10 +198,9 @@ async def clr(ctx,arg=None):
         # This will make sure that the response will only be registered if the following
         # conditions are met:
         def check(msg):
-            return msg.author == ctx.author and msg.channel == ctx.channel and \
-                   msg.content.lower() in ["confirm"]
+            return msg.author == ctx.author and msg.channel == ctx.channel and msg.content.lower() in ["confirm"]
 
-        msg = await client.wait_for("message", check=check)
+        msg = await bot.wait_for("message", check=check)
         if msg.content.lower() == "confirm":
             await ctx.channel.purge(limit=100)
         else:
@@ -370,6 +209,7 @@ async def clr(ctx,arg=None):
 async def clear_error(ctx, error):
     if isinstance(error, commands.MissingPermissions):
         await ctx.send("You need to be an admin to use this command!")
+
 @bot.command()
 @commands.is_owner()
 async def status(ctx,arg):
@@ -389,11 +229,74 @@ async def status_error(ctx, error):
     if isinstance(error, commands.MissingPermissions):
         await ctx.send("this command can only be used by the owner of the bot")
 
+@bot.command()
+# @commands.is_owner()
+async def p2p(ctx):
+    try:
+        image_url = ctx.message.attachments[0].url
+    except:
+        await ctx.send(embed=discord.Embed(description="please attach an image"))
+        return
+    file_name = f"image-{ctx.message.author.id}-p2p"
+    img_file_name = file_name+".png"
+    pdf_file_name = file_name+".pdf"
+
+    headers = {
+        'User-Agent': 'Mozilla/5.0 (X11; Ubuntu; Linux x86_64; rv:127.0) Gecko/20100101 Firefox/127.0'
+    }
+    request = urllib.request.Request(image_url, headers=headers)
+    response = urllib.request.urlopen(request)
+    image_data = response.read()
+
+    with open(img_file_name, "wb") as f:
+        f.write(image_data)
+
+    image = Image.open(img_file_name)
+    if image.mode == "RGBA":
+        image = image.convert("RGB")
+
+    image.save(pdf_file_name, 'PDF', resolution=100.0)
+    
+
+    with open(pdf_file_name, "rb") as file:
+        await ctx.send("the pdf:", file=discord.File(file, "image.pdf"))
+    os.system(f'rm {img_file_name}')
+    os.system(f'rm {pdf_file_name}')
+
+@bot.command()
+# @commands.is_owner()
+async def p2t(ctx):
+    try:
+        image_url = ctx.message.attachments[0].url
+    except:
+        await ctx.send(embed=discord.Embed(description="please attach an image"))
+        return
+    file_name = f"image-{ctx.message.author.id}-p2t.png"
+    headers = {
+        'User-Agent': 'Mozilla/5.0 (X11; Ubuntu; Linux x86_64; rv:127.0) Gecko/20100101 Firefox/127.0'
+    }
+    request = urllib.request.Request(image_url, headers=headers)
+    response = urllib.request.urlopen(request)
+    image_data = response.read()
+
+    with open(file_name, "wb") as f:
+        f.write(image_data)
+
+    image = Image.open(file_name)
+
+    gray_img = image.convert('L')
+
+    text = pytesseract.image_to_string(gray_img)
+
+    await ctx.send(text)
+    os.system(f'rm {file_name}')
+
 class NewHelpName(commands.MinimalHelpCommand):
     async def send_pages(self):
         destination = self.get_destination()
         for page in self.paginator.pages:
             emby = discord.Embed(description=page)
             await destination.send(embed=emby)
+
 bot.help_command = NewHelpName()
 bot.run(TOKEN)
